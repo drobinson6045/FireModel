@@ -23,11 +23,9 @@ def findNeighbors(xs,ys):
     modes = np.linspace(-N / 2, N / 2 - 1, N)
     modes = np.fft.ifftshift(modes)
     for i in range(len(xs[0,:])):
-
-        guess = i*2*np.pi/N
-        g=1
+        guess = 2*np.pi/N*np.argmin(((xs[0,i]-xs[lag,:])**2+(ys[0,i]-ys[lag,:])**2)**(0.5))
+        g = 1
         z0 = xs[0,i]+1j*ys[0,i]
-
         exponentials = np.exp(1j * modes * guess)
         z = np.sum(zn * exponentials) / N
         k=0
@@ -74,8 +72,6 @@ def findNeighbors(xs,ys):
                   """
                 print("*********NEIGHBOR ISSUE***********")
                 break
-
-
             gP = np.real((z-z0)*np.conj(zPP))+abs(zP)**2
             guess-=g/gP
         exponentials = np.exp(1j*modes*guess)
@@ -89,7 +85,7 @@ def bgFlow(x,y):
     # background flow
     # u = 1*np.cos(7*alpha)
     u = 0.0*np.ones(len(x))
-    v = 0.0*np.ones(len(x))
+    v = 8.0*np.ones(len(x))
     # u = 0*np.ones(len(x))#+2*np.random.uniform(-1,1)
     # u = np.cos(3*alpha)
     # v = 0*np.ones(len(x))#+4.*np.random.uniform(-1,1)
@@ -190,7 +186,7 @@ def Spectral_Derivative(function,PLOT):
     modes = np.linspace(-N / 2, N / 2 - 1, N)
     xn = np.fft.fft(function)
     xn = np.fft.fftshift(xn)
-    xn = GaussianFilter(modes, 10.) * xn
+    #xn = GaussianFilter(modes, 10.) * xn
     if(PLOT and PLOTTING):
         plt.subplot(3, 2,5)
         plt.semilogy(modes,np.abs(xn))
@@ -277,12 +273,17 @@ def RedistributePoints(x,y):
     return x,y
 
 def Convection(xs,ys,neighborsX,neighborsY):
-    midpoints = (xs+neighborsX)/2 + 1j*(ys+neighborsY)/2
-    positions = xs + 1j*ys
-    velocities = np.zeros(len(xs))
+    eps = 0.25
+    midpointsX = (xs+neighborsX)/2
+    midpointsY = (ys+neighborsY)/2
+    sinkx = np.zeros(len(xs))
+    sinky = np.zeros(len(ys))
     for i in range(len(xs)):
-        velocities[i]= np.sum(1/abs(positions[i]-midpoints)**2)
-    return -velocities
+        r2= (xs[i]-midpointsX)**2 + (ys[i]-midpointsY)**2 +eps
+        sinkx[i] = np.sum(-(xs[i]-midpointsX)/r2)
+        sinky[i] = np.sum(-(ys[i]-midpointsY)/r2)
+    print( sinkx, sinky)
+    return sinkx, sinky
 
 def UpdateLog(xs,ys,xpoint,ypoint,index,updating):
     if(updating):
@@ -315,7 +316,7 @@ def main():
     VERBOSE = True
     PLOTTING = True
     eps2 = 1e-1
-    N = 128  # number of points on front
+    N = 32  # number of points on front
     T = 2    # time horizon
     m = 100  # number of time steps
     global dt
@@ -327,7 +328,7 @@ def main():
     """NEEDS TO BE A FUNCTION OF LAG"""
     scaleFactor = lag/dt/600
     e_x = 1
-    e_y = 6
+    e_y = 1
     print( "Number of points on front is %d" % N)
     print("Time Horizon:",T)
     print("Timesteps:", m)
@@ -337,9 +338,9 @@ def main():
 
     ###############################################################################
     #INITIAL SHAPE
-    # x = np.cos(alpha)/e_x
-    # y = np.sin(alpha)/e_y
-    x,y = star(1,9,0.2)
+    x = 5*np.cos(alpha)/e_x
+    y = 5*np.sin(alpha)/e_y
+    #x,y = star(1,9,0.2)
     x,y=RedistributePoints(x,y)
 
     xs=np.zeros((lag+1,len(x)))
@@ -393,16 +394,17 @@ def main():
     theta = np.arctan2(Dy, Dx)
     ThetaAdjust(theta)
     # curvature = -np.real(Spectral_Derivative(theta - alpha, False))-1
-
+    """
     #PAPER BURNING
-    conX = xs[0, (N / 8):(3 * N / 8 + 1)]
-    conY = ys[0, (N / 8):(3 * N / 8 + 1)]
+    conX = xs[0, int(N / 8):int(3 * N / 8 + 1)]
+    conY = ys[0, int(N / 8):int(3 * N / 8 + 1)]
     #switch order because of counterclockwise alpha
     conX = np.asarray(list(reversed(conX)))
     conY = np.asarray(list(reversed(conY)))
     mean = np.mean(conY)
     max = np.max(abs(conY-mean))
     ###########
+    """
     for i in range(0,m):
         plt.clf()
         time = time + dt
@@ -417,34 +419,46 @@ def main():
             xs[lag-j,:]=xs[lag-(j+1),:]
             ys[lag-j,:]=ys[lag-(j+1),:]
 
-
-        ###############################################################################
+        neighborsX, neighborsY = findNeighbors(xs, ys)
+        
+        ########################################################################
         #NORMAL-VELOCITY DRIVERS
 
         #HEATFLUX
-        vel_normal=HeatFlux(xs,ys,neighborsX,neighborsY,vel_normal,scaleFactor)/1.1
+        #vel_normal=HeatFlux(xs,ys,neighborsX,neighborsY,vel_normal,scaleFactor)/1.1
+        vel_normal = np.zeros(len(xs[0,:]))
 
         #BACKGROUND WIND
-        vel_normal += np.sin(theta) * velx - np.cos(theta) * vely   # """FIXED"""
+        #vel_normal += np.sin(theta) * velx - np.cos(theta) * vely 
 
         #SINKS
-        # vel_normal += Convection(xs[0,:],ys[0,:],neighborsX,neighborsY)
-        #sinks contribution in HeatFlux
-        ###############################################################################
+        sinkx, sinky = Convection(xs[0,:],ys[0,:],neighborsX,neighborsY)
+        vel_normal += np.sin(theta) * sinkx - np.cos(theta) * sinky 
+        ########################################################################
 
+#   NEW PDE
+        """Algorithm  (U_t=(U_x)^2 - U_xx - U_xxxx
+        Calculate Ux^2
+        Calculate 2nd and 4th derivative as (modes^2 - modes^4)*weights
+        U = xs[0,:] + 1j*ys[0,:]
+        Ux = Spectral_Derivative(U,False)
+        uh = np.fft.fft(U)
+        vel_normal = abs(Ux**2 + np.fft.ifft((modes**2 - modes**4)*uh))
+        plt.plot(np.linspace(0,N,N),vel_normal)
+        plt.show()
+        """
         theta, vel_tan, L = Calc_Vel_Tan(theta,vel_normal,L)
         xs[0, :], ys[0, :]=Calc_Positions(xs[0,:],ys[0,:],L,theta,vel_normal,vel_tan,dt)
 
-
+        """
         #PAPER BURNING
-        hx = np.gradient(conY)
-
+        hx = np.gradient(cony)
         hxx = np.gradient(hx)
         conY += dt*(0.1*hxx + 5*hx**2)
         normConY = (conY-np.mean(conY))/np.max(abs(conY-np.mean(conY)))
-        sliceY = ys[0, (N / 8):(3 * N / 8 + 1)]
+        sliceY = ys[0, int(N / 8):int(3 * N / 8 + 1)]
         normY = (sliceY-np.mean(sliceY))/np.max(abs(sliceY-np.mean(sliceY)))
-
+        """
 
         plt.clf()
         # plt.plot(conX,normConY,'r.')
@@ -484,6 +498,9 @@ def main():
             plt.figure(2)
             plt.plot(xs[0,:],ys[0,:],'r--o')
             plt.plot(xs[lag,:],ys[lag,:],'b')
+            plt.plot(xs[lag-1,:],ys[lag-1,:],'g')
+
+            plt.scatter(neighborsX,neighborsY,marker = '*')
             # sliceY = ys[0, (N / 8):(3 * N / 8 + 1)]
             # sliceX = xs[0, (N / 8):(3 * N / 8 + 1)]
 
